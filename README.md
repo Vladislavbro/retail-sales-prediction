@@ -74,7 +74,7 @@ CatBoostRegressor с функцией потерь взвешенного MAE.
 |--------------|-------------|
 | Baseline (без доп. признаков) | 3.1 |
 | С feature engineering | 2.5 |
-| С feature engineering + Optuna | 2.47 |
+| С feature engineering + Optuna | 2.45 |
 
 ## Запуск
 
