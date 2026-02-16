@@ -1,82 +1,82 @@
-# Предсказание продаж товаров
+# Retail Sales Prediction
 
-## Задача
+## Task
 
-Предсказание количества проданных единиц кроссовок на основе исторических данных о ценах, промо-акциях и остатках на складе.
+Predicting the number of sneakers units sold based on historical data about prices, promotions, and warehouse inventory.
 
-## Данные
+## Data
 
-Файлы `train.parquet` и `test.parquet` содержат следующие колонки:
+Files `train.parquet` and `test.parquet` contain the following columns:
 
-| Колонка | Описание |
-|---------|----------|
-| `nm_id` | Анонимный идентификатор товара |
-| `dt` | Дата |
-| `price` | Цена товара в этот день |
-| `is_promo` | Флаг участия товара в промо-акции |
-| `prev_leftovers` | Остаток товара на складе на начало дня |
-| `qty` | Количество проданных единиц (только в train, целевой признак) |
+| Column | Description |
+|--------|-------------|
+| `nm_id` | Anonymous product identifier |
+| `dt` | Date |
+| `price` | Product price on that day |
+| `is_promo` | Flag indicating product participation in promotion |
+| `prev_leftovers` | Product inventory at the beginning of the day |
+| `qty` | Number of units sold (only in train, target feature) |
 
-Период данных: 2024-07-04 -- 2025-07-07.
+Data period: 2024-07-04 -- 2025-07-07.
 
-## Решение
+## Solution
 
 ### Feature Engineering
 
-Генерация признаков реализована в `features_all.py` и разбита на 8 блоков, каждый из которых представлен отдельной функцией:
+Feature generation is implemented in `features_all.py` and divided into 8 blocks, each represented by a separate function:
 
-**Временные признаки** (`add_temporal_features`): календарные атрибуты даты: день недели, месяц, флаги выходных и начала/конца месяца, линейный тренд, циклическая кодировка через sin/cos.
+**Temporal Features** (`add_temporal_features`): calendar date attributes: day of week, month, weekend flags and start/end of month, linear trend, cyclic encoding via sin/cos.
 
-**Ценовые признаки** (`add_price_features`): динамика цены товара: абсолютное и относительное изменение, скользящие средние/минимумы/максимумы за 7/14/30 дней, глубина скидки от исторического максимума, перцентиль цены, количество дней с последнего изменения цены.
+**Price Features** (`add_price_features`): product price dynamics: absolute and relative change, rolling means/minimums/maximums for 7/14/30 days, discount depth from historical maximum, price percentile, days since last price change.
 
-**Промо-признаки** (`add_promo_features`): характеристики промо-активности: длительность текущей промо-серии, дней с последнего промо, частота промо за 30 дней, флаги начала и конца промо-периода, взаимодействие промо с глубиной скидки.
+**Promo Features** (`add_promo_features`): promotional activity characteristics: current promo streak duration, days since last promo, promo frequency over 30 days, flags for promo start and end, interaction of promo with discount depth.
 
-**Признаки остатков** (`add_leftovers_features`): динамика складских остатков: скользящие средние, изменение остатков, тренд за 7 дней (наклон линейной регрессии), флаг низкого остатка.
+**Inventory Features** (`add_leftovers_features`): warehouse inventory dynamics: rolling averages, inventory change, 7-day trend (linear regression slope), low inventory flag.
 
-**Лаги продаж** (`add_sales_lag_features`): лаговые значения qty за 1/7/14/28 дней, скользящие средние и стандартные отклонения продаж, expanding mean. Все статистики сдвинуты на 1 день для предотвращения утечки.
+**Sales Lags** (`add_sales_lag_features`): lagged qty values for 1/7/14/28 days, rolling means and standard deviations of sales, expanding mean. All statistics are shifted by 1 day to prevent leakage.
 
-**Товарные признаки** (`add_item_features`): агрегатные характеристики товара: средние продажи, средняя цена, волатильность цены, количество дней в данных.
+**Item Features** (`add_item_features`): aggregate product characteristics: average sales, average price, price volatility, number of days in data.
 
-**Ценовая эластичность** (`add_elasticity_features`): скользящая корреляция цены и продаж за 30 дней, псевдо-эластичность как отношение процентных изменений qty и price.
+**Price Elasticity** (`add_elasticity_features`): rolling correlation of price and sales over 30 days, pseudo-elasticity as ratio of percentage changes in qty and price.
 
-**Взаимодействия** (`add_interaction_features`): попарные произведения: цена на промо, день недели на промо, остатки на промо.
+**Interactions** (`add_interaction_features`): pairwise products: price on promo, day of week on promo, inventory on promo.
 
-### Предотвращение утечки данных
+### Data Leakage Prevention
 
-Для корректного подсчета признаков на test-данных train и test объединяются в единый таймлайн. Значения `qty` в test-строках заменяются на NaN (`qty_safe`), после чего все лаговые и скользящие статистики считаются по этому замаскированному столбцу. Это гарантирует, что модель не использует информацию из будущего, даже если test-строки расположены между train-строками.
+For correct feature calculation on test data, train and test are combined into a single timeline. `qty` values in test rows are replaced with NaN (`qty_safe`), after which all lagged and rolling statistics are calculated on this masked column. This ensures that the model does not use information from the future, even if test rows are located between train rows.
 
-### Модель
+### Model
 
-CatBoostRegressor с функцией потерь взвешенного MAE.
+CatBoostRegressor with weighted MAE loss function.
 
-Веса наблюдений: 7.0 для строк с `qty > 0`, 1.0 для нулевых продаж.
+Observation weights: 7.0 for rows with `qty > 0`, 1.0 for zero sales.
 
-Подбор гиперпараметров выполнен через Optuna (50 trials) по следующим параметрам: learning rate, глубина дерева, L2-регуляризация, min data in leaf, bagging temperature, random strength.
+Hyperparameter tuning performed via Optuna (50 trials) on the following parameters: learning rate, tree depth, L2 regularization, min data in leaf, bagging temperature, random strength.
 
-### Трекинг экспериментов
+### Experiment Tracking
 
-Все эксперименты логируются в MLflow. Каждый trial Optuna записывается как вложенный run, финальная модель с лучшими параметрами сохраняется в родительском run вместе с важностью признаков.
+All experiments are logged in MLflow. Each Optuna trial is recorded as a nested run, the final model with best parameters is saved in the parent run along with feature importance.
 
-## Структура проекта
+## Project Structure
 
 ```
 .
 ├── README.md
-├── features_all.py           # Генерация признаков (8 блоков)
-├── train.parquet             # Обучающие данные
-├── test.parquet              # Тестовые данные
-└── submission.csv            # Предсказания
+├── features_all.py           # Feature generation (8 blocks)
+├── train.parquet             # Training data
+├── test.parquet              # Test data
+└── submission.csv            # Predictions
 ```
 
-## Результаты
+## Results
 
-| Конфигурация | Weighted MAE |
-|--------------|-------------|
-| Baseline (без доп. признаков) | 3.1 |
-| С feature engineering | 2.5 |
-| С feature engineering + Optuna | 2.45 |
+| Configuration | Weighted MAE |
+|---------------|-------------|
+| Baseline (no additional features) | 3.1 |
+| With feature engineering | 2.5 |
+| With feature engineering + Optuna | 2.45 |
 
-## Запуск
+## Usage
 
 ```python
 import pandas as pd
@@ -84,12 +84,12 @@ import numpy as np
 from features_all import *
 from catboost import CatBoostRegressor, Pool
 
-# Загрузка и подготовка
+# Loading and preparation
 train_raw = pd.read_parquet("train.parquet")
 test_raw = pd.read_parquet("test.parquet")
 train_raw["dt"] = pd.to_datetime(train_raw["dt"])
 test_raw["dt"] = pd.to_datetime(test_raw["dt"])
 
-# Объединение, генерация признаков, обучение, предсказание
-# (см. основной ноутбук)
+# Merging, feature generation, training, prediction
+# (see main notebook)
 ```
