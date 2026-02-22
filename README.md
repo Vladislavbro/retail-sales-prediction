@@ -78,6 +78,18 @@ All experiments are logged in MLflow. Each Optuna trial is recorded as a nested 
 
 ## Usage
 
+### 1. Start MLflow
+
+Before running the notebook, bring up MLflow via Docker Compose:
+
+```bash
+docker compose up -d
+```
+
+MLflow UI will be available at [http://localhost:5000](http://localhost:5000).
+
+### 2. Run the notebook
+
 ```python
 import pandas as pd
 import numpy as np
